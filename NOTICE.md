@@ -110,3 +110,5 @@ macOS 衍生版本沿用原项目的动画文件，并新增 `macos/` 中的 App
 本分发版本移除了上游 `icons/` 中的 OpenAI 商标图标，Mac 应用改用本版本制作的几何风格 550C 图标。原 `TRADEMARKS.md` 保留用于说明上游素材及相关第三方权利；未纳入分发的图标不包含在 Mac 发布包中。
 
 原上游 README 保存于 `docs/README.windows-upstream.md`；本仓库首页 README 和 Mac 文档描述本衍生版本。
+
+macOS v1.1.0 在上述适配基础上新增后台预启动、窗口准备后淡出及经使用者授权的窗口尺寸调整。这些变化属于 macOS 播放器逻辑，原动画文件与上游版权声明保持原样。

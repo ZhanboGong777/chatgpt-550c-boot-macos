@@ -19,6 +19,10 @@ jobs:
           persist-credentials: false
       - name: Build and check universal macOS archive
         run: python3 macos/build.py --arch universal
+      - name: Check handoff state transitions
+        run: |
+          xcrun swiftc -parse-as-library -target arm64-apple-macosx13.0 -module-cache-path .build/module-cache macos/HandoffState.swift macos/tests/HandoffStateTests.swift -o .build/handoff-state-tests
+          .build/handoff-state-tests
       - name: Verify archive checksums
         working-directory: dist
         run: shasum -a 256 -c SHA256SUMS

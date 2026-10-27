@@ -52,9 +52,11 @@ def main():
     for arch in architectures:
         binary = stage / f'{EXECUTABLE}-{arch}'
         print(f'Building {arch}...', flush=True)
-        run('xcrun', 'swiftc', '-swift-version', '5', '-O', '-target', f'{arch}-apple-macosx13.0',
+        run('xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library', '-O', '-target', f'{arch}-apple-macosx13.0',
             '-module-name', EXECUTABLE, '-module-cache-path', cache,
-            '-framework', 'AppKit', '-framework', 'WebKit', ROOT / 'macos' / 'Launcher.swift', '-o', binary)
+            '-framework', 'AppKit', '-framework', 'WebKit', '-framework', 'ApplicationServices',
+            ROOT / 'macos' / 'Launcher.swift', ROOT / 'macos' / 'HandoffState.swift',
+            ROOT / 'macos' / 'TargetWindowManager.swift', '-o', binary)
         slices.append(binary)
     destination = binary_dir / EXECUTABLE
     if len(slices) == 2:

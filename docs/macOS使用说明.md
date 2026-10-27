@@ -1,6 +1,6 @@
 # macOS 使用说明
 
-本版本基于 [Chenchu0o0/chatgpt-550c-boot](https://github.com/Chenchu0o0/chatgpt-550c-boot) 添加 Mac 支持。双击启动器后播放 550C 动画，再打开 ChatGPT。
+本版本基于 [Chenchu0o0/chatgpt-550c-boot](https://github.com/Chenchu0o0/chatgpt-550c-boot) 添加 Mac 支持。双击启动器后播放 550C 动画，同时在后台预先打开 ChatGPT。动画结束后保留最后一帧，等 ChatGPT 窗口准备好，再以约 0.25 秒淡出并切换到 ChatGPT。
 
 ## 安装
 
@@ -9,7 +9,24 @@
 3. 将 `ChatGPT 550C.app` 拖入“应用程序”文件夹。也可放入个人的 `~/Applications` 文件夹。
 4. 双击应用。从这个入口打开时才会播放动画。
 
-如需桌面入口，可在 Finder 中为 `ChatGPT 550C.app` 制作替身，再把替身移到桌面。ChatGPT 已在运行时，动画结束后会打开现有应用。
+如需桌面入口，可在 Finder 中为 `ChatGPT 550C.app` 制作替身，再把替身移到桌面。ChatGPT 已在运行时，启动器会使用现有应用，不会退出或重新启动它。
+
+## 设置窗口铺满权限
+
+自动调整窗口需要 macOS 的“辅助功能”权限。请按以下步骤由自己授权：
+
+1. 按住 **Option** 键打开 `ChatGPT 550C.app`。
+2. 在模式选择窗口中点“设置窗口铺满权限”。也可在播放器的应用菜单中选择“设置窗口铺满权限…”。
+3. 在打开的系统权限页面中，为 `ChatGPT 550C` 手动启用“辅助功能”访问。若列表尚未列出应用，请将已安装的 `ChatGPT 550C.app` 添加到该页面。
+4. 关闭权限设置，再次打开启动器。
+
+授权后，播放器会在切换到 ChatGPT 前，将它的窗口铺满**当前屏幕的可用区域**。菜单栏保留，窗口不会进入 macOS 原生全屏空间。
+
+本启动器只使用这项权限来检测和调整 ChatGPT 主窗口。不授权也能播放动画、在后台预启动 ChatGPT，并完成淡出衔接；ChatGPT 窗口会保持现有大小。启动器不会替你授权。关于这项系统权限，可参阅 [Apple 官方说明](https://support.apple.com/zh-cn/guide/mac-help/mh43185/mac)。
+
+### 升级后显示已授权，但窗口仍不能铺满
+
+本地 ad-hoc 签名与具体构建版本相关。更新后，macOS 可能仍保留旧版本的授权条目，即使开关显示已开启，新版也不能使用。先退出启动器，在“辅助功能”列表中移除它的旧条目，再点加号选择当前安装的 `ChatGPT 550C.app`，由自己重新开启权限后运行。只需处理这个启动器的条目。相关机制见 [Apple TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)。
 
 ## 动画模式
 
@@ -17,20 +34,20 @@
 
 | 模式 | 行为 |
 | --- | --- |
-| 完整 550C 动画 | 默认模式，播放 Logo 与终端动画，当前固定源码实测约 11 秒 |
+| 完整 550C 动画 | 默认模式，播放 Logo 与终端动画，当前固定源码约 11–14 秒 |
 | 快速模式，仅 Logo | 仅播放 Logo，实测约 5 秒 |
 | 直接打开 ChatGPT | 省略动画 |
 
-当前源码的节奏较上游说明中的约 90 秒更短。本版本未延长其时间线。
+上述为动画本体时长，最终切换还取决于 ChatGPT 窗口的准备时间。当前源码的节奏较上游说明中的约 90 秒更短，本版本未延长其时间线。
 
 ## 跳过和退出
 
 | 操作 | 结果 |
 | --- | --- |
-| Esc | 跳过动画，打开 ChatGPT |
-| 右上角 SKIP | 跳过动画，打开 ChatGPT |
-| Command-W | 跳过动画，打开 ChatGPT |
-| Command-Q | 退出播放器 |
+| Esc | 跳过剩余动画，待 ChatGPT 准备好后淡出 |
+| 右上角 SKIP | 跳过剩余动画，待 ChatGPT 准备好后淡出 |
+| Command-W | 跳过剩余动画，待 ChatGPT 准备好后淡出 |
+| Command-Q | 退出播放器；已预启动的 ChatGPT 保持运行 |
 
 ## 首次打开与校验
 
@@ -50,6 +67,8 @@ shasum -a 256 -c SHA256SUMS
 
 - 提示找不到 ChatGPT：先安装 ChatGPT，通常将它放到“应用程序”文件夹即可。
 - 动画还没播完：可以按 Esc 或点击 SKIP；播放器另有 150 秒超时保护。
+- 动画停在最后一帧：播放器正在等待 ChatGPT 窗口准备好，之后会淡出。
+- ChatGPT 没有铺满窗口：检查 `ChatGPT 550C` 的“辅助功能”权限；后台预启动与动画淡出不受此项权限影响。
 - 想在 Mac 开机时播放：本版本提供的是 ChatGPT 启动前动画，没有自动添加登录项。
 - Intel 或较早系统：发布包包含 Intel 架构并以 macOS 13 为构建目标；当前实机验证范围仅为 Apple Silicon 与 macOS 26.3.1。
 
