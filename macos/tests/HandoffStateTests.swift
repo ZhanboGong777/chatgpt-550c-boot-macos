@@ -37,9 +37,42 @@ struct HandoffStateTests {
         expect(&cold, .revealCompleted, [.dismissOverlay], .done)
         terminalIsIdempotent(&cold, .done)
 
+        // Readiness belongs to a process; losing it before playback ends must
+        // restore waiting rather than reveal a stale target.
+        var lostBeforePlaybackEnd = HandoffState()
+        expect(&lostBeforePlaybackEnd, .targetUnavailable, [], .playing)
+        expect(&lostBeforePlaybackEnd, .targetReady, [], .playing)
+        expect(&lostBeforePlaybackEnd, .targetUnavailable, [], .playing)
+        expect(&lostBeforePlaybackEnd, .playbackEnded, [.waitForTarget], .waiting)
+        expect(&lostBeforePlaybackEnd, .targetUnavailable, [], .waiting)
+        expect(&lostBeforePlaybackEnd, .targetReady, [.revealTarget], .revealing)
+        expect(&lostBeforePlaybackEnd, .revealCompleted, [.dismissOverlay], .done)
+        terminalIsIdempotent(&lostBeforePlaybackEnd, .done)
+
+        // A replacement during reveal keeps the overlay until the new window
+        // is ready. Stale reveal completion and repeated loss cannot dismiss it.
+        var replacedDuringReveal = HandoffState()
+        expect(&replacedDuringReveal, .targetReady, [], .playing)
+        expect(&replacedDuringReveal, .playbackEnded, [.revealTarget], .revealing)
+        expect(&replacedDuringReveal, .targetUnavailable, [.waitForTarget], .waiting)
+        expect(&replacedDuringReveal, .revealCompleted, [], .waiting)
+        expect(&replacedDuringReveal, .targetUnavailable, [], .waiting)
+        expect(&replacedDuringReveal, .targetReady, [.revealTarget], .revealing)
+        expect(&replacedDuringReveal, .revealCompleted, [.dismissOverlay], .done)
+        terminalIsIdempotent(&replacedDuringReveal, .done)
+
+        // Disappearance can recover, but cannot bypass the bounded wait.
+        var replacementTimeout = HandoffState()
+        expect(&replacementTimeout, .targetReady, [], .playing)
+        expect(&replacementTimeout, .playbackEnded, [.revealTarget], .revealing)
+        expect(&replacementTimeout, .targetUnavailable, [.waitForTarget], .waiting)
+        expect(&replacementTimeout, .waitingExpired, [.dismissOverlay, .showFailure], .failed)
+        terminalIsIdempotent(&replacementTimeout, .failed)
+
         // Preparation failure is deferred until playback has finished.
         var earlyFailure = HandoffState()
         expect(&earlyFailure, .targetFailed, [], .playing)
+        expect(&earlyFailure, .targetUnavailable, [], .playing)
         expect(&earlyFailure, .targetReady, [], .playing)
         expect(&earlyFailure, .playbackEnded, [.dismissOverlay, .showFailure], .failed)
         terminalIsIdempotent(&earlyFailure, .failed)

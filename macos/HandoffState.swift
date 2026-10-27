@@ -4,7 +4,7 @@ enum HandoffPhase: Equatable {
 }
 
 enum HandoffEvent: CaseIterable {
-    case playbackEnded, targetReady, targetFailed, waitingExpired, cancelled, revealCompleted
+    case playbackEnded, targetReady, targetUnavailable, targetFailed, waitingExpired, cancelled, revealCompleted
 }
 
 enum HandoffEffect: Equatable {
@@ -37,6 +37,15 @@ struct HandoffState {
             guard phase == .waiting else { return [] }
             phase = .revealing
             return [.revealTarget]
+
+        case .targetUnavailable:
+            // A replaced or disappearing process revokes its readiness, while
+            // an actual launch failure remains final.
+            guard preparation != .failed else { return [] }
+            preparation = .pending
+            guard phase == .revealing else { return [] }
+            phase = .waiting
+            return [.waitForTarget]
 
         case .targetFailed:
             preparation = .failed

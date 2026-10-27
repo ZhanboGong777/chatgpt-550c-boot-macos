@@ -26,6 +26,10 @@ final class TargetWindowManager {
         cgWindowFrame(pid: pid, onScreenOnly: true) != nil
     }
 
+    static func hasWindow(pid: pid_t) -> Bool {
+        cgWindowFrame(pid: pid, onScreenOnly: false) != nil
+    }
+
     private static func cgWindowFrame(pid: pid_t, onScreenOnly: Bool) -> CGRect? {
         let options: CGWindowListOption = onScreenOnly ? [.optionOnScreenOnly, .excludeDesktopElements] : [.excludeDesktopElements]
         guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return nil }

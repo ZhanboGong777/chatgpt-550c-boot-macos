@@ -40,16 +40,21 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     var handoff = HandoffState()
     let targetWindows = TargetWindowManager()
     var targetApp: NSRunningApplication?
+    var targetURL: URL?
+    var readyPID: pid_t?
+    var targetGeneration = 0
     var targetError: String?
     var targetProbe: Timer?
     var probeBusy = false
     var waitDeadline: Timer?
+    var waitExpiresAt: Date?
     var activationProbe: Timer?
     var activationObserver: NSObjectProtocol?
     var screenFrame = CGRect.zero
     var desktopTop: CGFloat = 0
     var telemetry: [String: Any] = [:]
     var verificationReport: [String: Any]?
+    var waitingLabel: NSTextField?
 
     var shouldPrepareTarget: Bool { !options.preview && (!options.testing || options.liveHandoffTest) }
     var elapsed: Double { Date().timeIntervalSince(startTime) }
@@ -276,6 +281,10 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     }
 
     func resolveChatGPT() -> URL? {
+        // An explicit local fixture is accepted only by the live verification mode.
+        if options.liveHandoffTest, let path = options.value("--verify-target") {
+            return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+        }
         let fm = FileManager.default
         let candidates = [URL(fileURLWithPath: "/Applications/ChatGPT.app"), fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications/ChatGPT.app")]
         let registered = ["com.openai.chat", "com.openai.codex"].compactMap {
@@ -298,6 +307,7 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             perform(.targetFailed)
             return
         }
+        targetURL = target.standardizedFileURL.resolvingSymlinksInPath()
         let config = NSWorkspace.OpenConfiguration()
         config.activates = false
         config.hides = false
@@ -305,25 +315,33 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             guard let self, self.handoff.phase == .playing || self.handoff.phase == .waiting,
                   let window = self.window,
                   let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                  application.bundleURL?.standardizedFileURL == target.standardizedFileURL else { return }
+                  self.matchesTarget(application) else { return }
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+        }
+        targetProbe = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in self?.probeTarget() }
+        // Reuse the live process directly instead of asking a single-instance app
+        // to launch a second process that may immediately hand off and exit.
+        if let running = refreshTarget(), TargetWindowManager.hasWindow(pid: running.processIdentifier) {
+            telemetry["reusedRunningApplication"] = true
+            probeTarget()
+            return
         }
         NSWorkspace.shared.openApplication(at: target, configuration: config) { application, error in
             DispatchQueue.main.async {
                 guard self.handoff.phase != .cancelled && self.handoff.phase != .done && self.handoff.phase != .failed else { return }
-                if let error {
+                if let error, self.refreshTarget() == nil {
                     self.targetError = "无法打开 ChatGPT：\(error.localizedDescription)"
                     self.perform(.targetFailed)
                     return
                 }
-                guard let application else { self.perform(.targetFailed); return }
-                self.targetApp = application
-                self.telemetry["processReadyAt"] = self.elapsed
-                self.targetProbe = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in self?.probeTarget() }
+                if let application, !application.isTerminated, self.matchesTarget(application) {
+                    self.adoptTarget(application)
+                }
                 self.probeTarget()
                 // Some applications activate themselves during startup. Cover them again.
-                if !self.finished && NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier {
+                if !self.finished, let current = self.targetApp,
+                   NSWorkspace.shared.frontmostApplication?.processIdentifier == current.processIdentifier {
                     self.window?.makeKeyAndOrderFront(nil)
                     NSApp.activate(ignoringOtherApps: true)
                 }
@@ -331,22 +349,61 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         }
     }
 
-    func probeTarget() {
-        guard !probeBusy, let application = targetApp, handoff.phase == .playing || handoff.phase == .waiting else { return }
-        if application.isTerminated {
-            targetProbe?.invalidate()
-            targetError = "ChatGPT 在准备窗口时退出。请重新打开启动器。"
-            perform(.targetFailed)
-            return
+    func matchesTarget(_ application: NSRunningApplication) -> Bool {
+        guard let url = application.bundleURL, let targetURL else { return false }
+        return url.standardizedFileURL.resolvingSymlinksInPath() == targetURL
+    }
+
+    func adoptTarget(_ application: NSRunningApplication) {
+        guard targetApp?.processIdentifier != application.processIdentifier else { return }
+        if targetApp != nil {
+            telemetry["processReplacementCount"] = (telemetry["processReplacementCount"] as? Int ?? 0) + 1
         }
+        targetGeneration += 1
+        targetApp = application
+        readyPID = nil
+        telemetry["processReadyAt"] = elapsed
+        telemetry["targetPID"] = Int(application.processIdentifier)
+        perform(.targetUnavailable)
+    }
+
+    func targetBecameUnavailable(generation: Int) {
+        guard targetGeneration == generation else { return }
+        readyPID = nil
+        targetGeneration += 1
+        perform(.targetUnavailable)
+    }
+
+    @discardableResult
+    func refreshTarget() -> NSRunningApplication? {
+        let current = targetApp.flatMap { !$0.isTerminated && matchesTarget($0) ? $0 : nil }
+        if let current, TargetWindowManager.hasWindow(pid: current.processIdentifier) { return current }
+        let candidates = NSWorkspace.shared.runningApplications.filter { !$0.isTerminated && matchesTarget($0) }
+        if let replacement = candidates.first(where: { TargetWindowManager.hasWindow(pid: $0.processIdentifier) }) ?? current ?? candidates.first {
+            adoptTarget(replacement)
+            return replacement
+        }
+        if readyPID != nil {
+            targetBecameUnavailable(generation: targetGeneration)
+        }
+        return nil
+    }
+
+    func probeTarget() {
+        guard !probeBusy, handoff.phase == .playing || handoff.phase == .waiting,
+              let application = refreshTarget() else { return }
+        guard readyPID != application.processIdentifier else { return }
         probeBusy = true
+        let generation = targetGeneration
         targetWindows.prepare(pid: application.processIdentifier, frame: screenFrame, desktopTop: desktopTop) { [weak self] result in
             guard let self else { return }
             self.probeBusy = false
             guard self.handoff.phase == .playing || self.handoff.phase == .waiting else { return }
+            guard !application.isTerminated, self.targetGeneration == generation,
+                  self.refreshTarget()?.processIdentifier == application.processIdentifier else { return }
             self.recordWindow(result)
             if result.ready {
-                self.targetProbe?.invalidate()
+                self.readyPID = application.processIdentifier
                 self.telemetry["windowReadyAt"] = self.elapsed
                 self.perform(.targetReady)
             }
@@ -365,9 +422,14 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             case .waitForTarget:
                 telemetry["waitStartedAt"] = elapsed
                 showWaitingLabel()
-                waitDeadline = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in
+                activationProbe?.invalidate()
+                waitDeadline?.invalidate()
+                if waitExpiresAt == nil { waitExpiresAt = Date().addingTimeInterval(8) }
+                waitDeadline = Timer.scheduledTimer(withTimeInterval: max(0.01, waitExpiresAt!.timeIntervalSinceNow), repeats: false) { [weak self] _ in
                     guard let self else { return }
-                    self.targetError = "ChatGPT 窗口尚未准备好。它已在后台启动，可以从 Dock 打开。"
+                    self.targetError = self.refreshTarget() == nil
+                        ? "ChatGPT 已关闭或未完成启动。请重新打开启动器。"
+                        : "ChatGPT 窗口尚未准备好。它已在后台启动，可以从 Dock 打开。"
                     self.perform(.waitingExpired)
                 }
             case .revealTarget:
@@ -388,7 +450,7 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     }
 
     func showWaitingLabel() {
-        guard let view = window?.contentView else { return }
+        guard waitingLabel == nil, let view = window?.contentView else { return }
         let label = NSTextField(labelWithString: "ChatGPT 正在准备…")
         label.textColor = NSColor(calibratedRed: 0.95, green: 0.67, blue: 0.2, alpha: 1)
         label.font = .systemFont(ofSize: 13, weight: .medium)
@@ -396,12 +458,23 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         label.frame = NSRect(x: 0, y: 55, width: view.bounds.width, height: 22)
         label.autoresizingMask = [.width, .maxYMargin]
         view.addSubview(label)
+        waitingLabel = label
     }
 
     func revealChatGPT() {
-        guard let application = targetApp, !application.isTerminated else { perform(.targetFailed); return }
+        guard let application = refreshTarget(), handoff.phase == .revealing,
+              readyPID == application.processIdentifier else {
+            perform(.targetUnavailable)
+            return
+        }
+        let generation = targetGeneration
         targetWindows.prepare(pid: application.processIdentifier, frame: screenFrame, desktopTop: desktopTop) { [weak self] result in
             guard let self, self.handoff.phase == .revealing else { return }
+            guard self.targetGeneration == generation else { return }
+            guard !application.isTerminated, result.ready else {
+                self.targetBecameUnavailable(generation: generation)
+                return
+            }
             self.recordWindow(result)
             self.window?.level = .statusBar
             self.telemetry["activatedAt"] = self.elapsed
@@ -413,10 +486,10 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
             let activationStarted = Date()
             self.activationProbe = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] timer in
                 guard let self, self.handoff.phase == .revealing else { timer.invalidate(); return }
+                guard self.targetGeneration == generation else { timer.invalidate(); return }
                 guard !application.isTerminated else {
                     timer.invalidate()
-                    self.targetError = "ChatGPT 在切换窗口时退出，请重试。"
-                    self.perform(.targetFailed)
+                    self.targetBecameUnavailable(generation: generation)
                     return
                 }
                 let visible = NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier && TargetWindowManager.hasVisibleWindow(pid: application.processIdentifier)
@@ -430,20 +503,37 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
                 }
                 timer.invalidate()
                 self.telemetry["targetVisibleAt"] = self.elapsed
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in self?.fadeOverlay() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                    guard let self, self.handoff.phase == .revealing else { return }
+                    guard self.targetGeneration == generation else { return }
+                    guard !application.isTerminated else {
+                        self.targetBecameUnavailable(generation: generation)
+                        return
+                    }
+                    self.fadeOverlay()
+                }
             }
         }
     }
 
     func fadeOverlay() {
         guard handoff.phase == .revealing else { return }
+        let generation = targetGeneration
         telemetry["fadeStartedAt"] = elapsed
         guard let window else { perform(.revealCompleted); return }
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in self?.perform(.revealCompleted) })
+        }, completionHandler: { [weak self] in
+            guard let self, self.handoff.phase == .revealing, self.targetGeneration == generation else { return }
+            guard let application = self.targetApp, !application.isTerminated else {
+                window.alphaValue = 1
+                self.targetBecameUnavailable(generation: generation)
+                return
+            }
+            self.perform(.revealCompleted)
+        })
     }
 
     func persistLiveReport() {
@@ -451,6 +541,7 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
         var report = verificationReport ?? [:]
         report["handoff"] = telemetry
         report["handoffPhase"] = String(describing: handoff.phase)
+        if let targetError { report["targetError"] = targetError }
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
         }
@@ -471,6 +562,7 @@ final class Launcher: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKU
     }
 
     func showLaunchError(_ text: String) {
+        if options.liveHandoffTest { NSApp.terminate(nil); return }
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "ChatGPT 550C"

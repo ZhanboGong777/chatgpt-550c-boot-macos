@@ -1,6 +1,6 @@
 # macOS Release 发布说明
 
-这是基于 [Chenchu0o0/chatgpt-550c-boot](https://github.com/Chenchu0o0/chatgpt-550c-boot) 添加 macOS 支持的衍生版本。准备发布的版本为 `v1.1.0`。
+这是基于 [Chenchu0o0/chatgpt-550c-boot](https://github.com/Chenchu0o0/chatgpt-550c-boot) 添加 macOS 支持的衍生版本。准备发布的版本为 `v1.1.1`。
 
 ## 上传源码
 
@@ -30,7 +30,7 @@ python3 macos/build.py --arch universal
 
 将 `dist/` 中生成的以下文件添加到 GitHub Release：
 
-- `ChatGPT-550C-macOS-v1.1.0-universal.zip`
+- `ChatGPT-550C-macOS-v1.1.1-universal.zip`
 - `SHA256SUMS`
 
 也可用 `--arch arm64` 或 `--arch x86_64` 分别生成单一架构包，文件名中的架构后缀随之变化。各架构只需上传实际构建并检查的文件。
@@ -38,8 +38,8 @@ python3 macos/build.py --arch universal
 ## 创建 GitHub Release
 
 1. 在 GitHub Desktop 中打开本地仓库，检查 **Changes** 中显示的修改，填写提交说明并自行提交，再推送到自己的 GitHub 仓库。更新后的版本号、源码与文档均应一起提交。
-2. 在仓库的 Releases 中创建新 Release，标签填写 `macos-v1.1.0`，与 Mac 构建工作流一致。
-3. 标题可使用 `ChatGPT 550C macOS v1.1.0`。
+2. 在仓库的 Releases 中创建新 Release，标签填写 `macos-v1.1.1`，与 Mac 构建工作流一致。
+3. 标题可使用 `ChatGPT 550C macOS v1.1.1`。
 4. 使用下方的发布正文，并上传 Mac 压缩包及 SHA-256 校验文件。
 5. 检查源码来源说明、附件文件名及测试范围后，再发布 Release。
 
@@ -57,7 +57,9 @@ python3 scripts/package-source.py
 
 基于 [Chenchu0o0/chatgpt-550c-boot](https://github.com/Chenchu0o0/chatgpt-550c-boot) 添加 macOS 支持。
 
-v1.1.0 改进了动画与 ChatGPT 的衔接：播放 550C 动画时，在后台预先打开 ChatGPT；动画结束后保留最后一帧，等待 ChatGPT 窗口准备好，再以约 0.25 秒淡出。
+v1.1.1 修正启动过程中的进程检测：优先复用已运行且有窗口的 ChatGPT；原进程退出时，继续查找同一路径下的接续进程，并丢弃旧进程的检测结果。动画结束后的等待最多为 8 秒；确实退出或窗口一直未就绪时会提示相应情况。
+
+播放 550C 动画时，仍会在后台预先打开 ChatGPT；动画结束后保留最后一帧，等待窗口准备好，再以约 0.25 秒淡出。
 
 授予“辅助功能”权限后，启动器会把 ChatGPT 窗口铺满当前屏幕的可用区域，保留菜单栏，不进入 macOS 原生全屏空间。该权限仅用于自动窗口调整；不授权也能使用后台预启动与淡出衔接。按住 Option 打开，在模式窗口中点“设置窗口铺满权限”，即可前往系统设置由自己手动授权；应用菜单也提供同名入口。
 
