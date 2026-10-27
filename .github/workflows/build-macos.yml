@@ -1,0 +1,33 @@
+name: Build macOS release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'macos-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build and check universal macOS archive
+        run: python3 macos/build.py --arch universal
+      - name: Verify archive checksums
+        working-directory: dist
+        run: shasum -a 256 -c SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ChatGPT-550C-macOS
+          path: |
+            dist/*.zip
+            dist/*.sha256
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

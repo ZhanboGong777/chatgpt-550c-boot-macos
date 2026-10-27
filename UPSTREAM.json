@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/Chenchu0o0/chatgpt-550c-boot",
+  "commit": "edb05d5bf72633a9b5b4ee40c36e4fae72cc3359",
+  "animation_original_author": "Voidpoket",
+  "animation_direct_upstream": "https://github.com/yannicksong0106/dsh-550c-boot",
+  "adaptation": "Adds a standalone macOS launcher, portable build tools and release packaging. The bundled animation source is preserved verbatim."
+}

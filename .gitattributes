@@ -1,0 +1,23 @@
+# 把所有文本文件在仓库内规范化为 LF，检出到 Windows 时用 CRLF，
+# 这样 git clone 和从 GitHub 下载的 zip 都是 CRLF。
+* text=auto eol=crlf
+
+# cmd.exe 需要 .bat/.cmd 是 CRLF。这里必须用 text eol=crlf 而不是 -text：
+# -text 只是“禁止转换”，文件当初以 LF 提交就会一直是 LF，
+# 于是从 GitHub 下载的 zip 里也是 LF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# PowerShell 兼容 CRLF/LF，统一按 CRLF 处理。
+*.ps1 text eol=crlf
+
+# 二进制素材不做行尾转换。
+*.png binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.zip binary
+*.exe binary
+*.dll binary

@@ -1,0 +1,22 @@
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Local shortcuts / user-specific absolute paths (do not commit)
+*.lnk
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Temp boot profiles (should never appear, safety net)
+chatgpt-boot-*/
+
+# macOS build outputs and local verification state
+.build/
+dist/
+__pycache__/
+*.pyc
+*.app/
